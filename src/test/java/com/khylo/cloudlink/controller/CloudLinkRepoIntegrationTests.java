@@ -48,6 +48,9 @@ public class CloudLinkRepoIntegrationTests {
     @Autowired private TermRepo termRepo;
 
     private MockMvc mvc;
+    
+    private static final int sizeOfObjects=8;
+    // Saving url in create test for use in delete test
     private static String newObjUrl;
     
 
@@ -64,6 +67,8 @@ public class CloudLinkRepoIntegrationTests {
 		termRepo.save(Term.builder().name("Glacier").description("Archived storage. Pay per retrieval").category("AWS").labels(Set.of("storage")).build());
 		termRepo.save(Term.builder().name("Citus").description("Horizontal scaling of PostgresSql").category("3pty").labels(Set.of("database")).build());
 		termRepo.save(Term.builder().name("CosmosDB").description("General cloud DB with relational noSql column based options").category("Azure").labels(Set.of("database")).build());
+		termRepo.save(Term.builder().name("Fargate").description("Fargate is AWS’s clusterless/serverless way of running containers. A Docker container does the processing -> The container extracts the thumbnail and uploads the image to an S3 bucket -> The container is managed by AWS Fargate. All functionality is triggered from AWS Lambda functions and contained within a serverless application written with the Serverless Framework.").category("AWS").labels(Set.of("container")).build());
+		termRepo.save(Term.builder().name("ACI").description("Azure Container Instances").category("Azure").labels(Set.of("containers")).build());
     }
     
     @Test
@@ -90,7 +95,7 @@ public class CloudLinkRepoIntegrationTests {
     	// confirm size before
     	ResultActions res = mvc.perform(get("/terms").accept(MediaType.APPLICATION_JSON));
         res.andExpect(status().isOk())
-           .andExpect(jsonPath("$._embedded.terms", hasSize(6)));
+           .andExpect(jsonPath("$._embedded.terms", hasSize(sizeOfObjects)));
         //create
     	Term newTerm = Term.builder().name("TestTerm").category("TestCat").build();
     	MvcResult result = mvc.perform(post("/terms").content(mapper.writeValueAsString(newTerm)).accept(MediaType.APPLICATION_JSON))
@@ -98,15 +103,16 @@ public class CloudLinkRepoIntegrationTests {
     	//Confirm size after
     	res = mvc.perform(get("/terms").accept(MediaType.APPLICATION_JSON));
         res.andExpect(status().isOk())
-           .andExpect(jsonPath("$._embedded.terms", hasSize(7)));
-    	//Parse response
-    	Map<String, Object> newObj = mapper.readValue(result.getResponse().getContentAsString(), Map.class);
-    	newObjUrl = ((Map)((Map)newObj.get("_links")).get("self")).get("href").toString();
+           .andExpect(jsonPath("$._embedded.terms", hasSize(sizeOfObjects+1)));
+        // Save url of new object for delete
+        Map<String, Object> jsonRespAsMap = mapper.readValue(result.getResponse().getContentAsString(), Map.class);
+    	newObjUrl = ((Map)((Map)jsonRespAsMap.get("_links")).get("self")).get("href").toString();
+    	
     }
     
     @Test
     public void testDelete() throws Exception {
-    	//Delete blocked
+    	//Delete blocked. .expect 405
         mvc.perform(delete(newObjUrl).accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().is(405));
     }
@@ -116,7 +122,6 @@ public class CloudLinkRepoIntegrationTests {
     public void testGetAll() throws Exception {
     	ResultActions res = mvc.perform(get("/terms").accept(MediaType.APPLICATION_JSON));
         res.andExpect(status().isOk())
-           .andExpect(jsonPath("$._embedded.terms", hasSize(6)))
            .andExpect(jsonPath("$._embedded.terms[*].name", hasItem("EBS")))
            .andExpect(jsonPath("$._embedded.terms[*].name", hasItem("EFS")))
            .andExpect(jsonPath("$._embedded.terms[*].name", hasItem("Glacier")))
@@ -127,12 +132,14 @@ public class CloudLinkRepoIntegrationTests {
         // Sorted Order by param?
         res = mvc.perform(get("/terms").param("sort","name,asc").accept(MediaType.APPLICATION_JSON));
         res.andExpect(status().isOk())
-        	.andExpect(jsonPath("$._embedded.terms[0].name", is("Citus")))
-           .andExpect(jsonPath("$._embedded.terms[1].name", is("CosmosDB")))
-           .andExpect(jsonPath("$._embedded.terms[2].name", is("EBS")))
-           .andExpect(jsonPath("$._embedded.terms[3].name", is("EFS")))
-           .andExpect(jsonPath("$._embedded.terms[4].name", is("Glacier")))
-           .andExpect(jsonPath("$._embedded.terms[5].name", is("S3")));
+        	.andExpect(jsonPath("$._embedded.terms[0].name", is("ACI")))	
+        	.andExpect(jsonPath("$._embedded.terms[1].name", is("Citus")))
+		   .andExpect(jsonPath("$._embedded.terms[2].name", is("CosmosDB")))
+		   .andExpect(jsonPath("$._embedded.terms[3].name", is("EBS")))
+		   .andExpect(jsonPath("$._embedded.terms[4].name", is("EFS")))
+		   .andExpect(jsonPath("$._embedded.terms[5].name", is("Fargate")))
+		   .andExpect(jsonPath("$._embedded.terms[6].name", is("Glacier")))
+		   .andExpect(jsonPath("$._embedded.terms[7].name", is("S3")));
 
     }
     
@@ -155,7 +162,7 @@ public class CloudLinkRepoIntegrationTests {
     
     @Test
     public void testSearchByCategory() throws Exception {
-    	List<Map<String, String>> testDataTable = List.of(Map.of("cat", "AWS", "ans","4", "vals", "EBS,EFS,S3,Glacier"),
+    	List<Map<String, String>> testDataTable = List.of(Map.of("cat", "AWS", "ans","5", "vals", "EBS,EFS,S3,Glacier,Fargate"),
     														Map.of("cat", "3pty", "ans","1", "vals", "Citus"));
     	for(Map<String, String> testData: testDataTable) {
     		String cat = testData.get("cat");
